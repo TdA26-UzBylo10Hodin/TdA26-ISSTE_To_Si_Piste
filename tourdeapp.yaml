@@ -2,10 +2,10 @@
 exposedPort: 80
 containers:
   - name: web
-    image: registry.tourde.cloud/<slug>/web
+    image: registry.tourde.cloud/is-te-to-si-pi-te/web
     port: 3001
   - name: server
-    image: registry.tourde.cloud/<slug>/server
+    image: registry.tourde.cloud/is-te-to-si-pi-te/server
     port: 3001
     env:
       DATABASE_URL: mysql://root:password@localhost:3306/tda_app
@@ -17,7 +17,7 @@ containers:
       MYSQL_ROOT_PASSWORD: password
     port: 3306
   - name: caddy
-    image: registry.tourde.cloud/<slug>/caddy
+    image: registry.tourde.cloud/is-te-to-si-pi-te/caddy
     port: 80
 build:
   - name: web
