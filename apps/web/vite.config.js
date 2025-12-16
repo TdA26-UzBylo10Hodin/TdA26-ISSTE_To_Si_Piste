@@ -1,14 +1,24 @@
 import { defineConfig } from 'vite'
+import { resolve } from 'path'
 
-// https://vite.dev/config/
 export default defineConfig({
   server: {
     port: 3001,
     proxy: {
-      "/api": "http://localhost:3000"
-    }
+      '/api': 'http://localhost:3000',
+    },
   },
+
   preview: {
-    port: 3001
-  }
+    port: 3001,
+  },
+
+  build: {
+    rollupOptions: {
+      input: {
+        main: resolve(__dirname, 'index.html'),
+        courses: resolve(__dirname, 'courses.html'),
+      },
+    },
+  },
 })
