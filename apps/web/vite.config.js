@@ -5,20 +5,18 @@ export default defineConfig({
   server: {
     port: 3001,
     proxy: {
-      '/api': 'http://localhost:3000',
-    },
+      "/api": "http://localhost:3000"
+    }
   },
-
   preview: {
-    port: 3001,
+    port: 3001
   },
-
   build: {
     rollupOptions: {
       input: {
         main: resolve(__dirname, 'index.html'),
-        courses: resolve(__dirname, '/courses/index.html'),
-      },
-    },
-  },
+        courses: resolve(__dirname, 'src/pages/courses/index.html'),
+      }
+    }
+  }
 })
