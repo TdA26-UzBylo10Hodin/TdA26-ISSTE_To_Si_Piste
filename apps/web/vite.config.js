@@ -1,6 +1,6 @@
 import { defineConfig } from 'vite'
-import { resolve } from 'path'
 
+// https://vite.dev/config/
 export default defineConfig({
   server: {
     port: 3001,
@@ -10,13 +10,5 @@ export default defineConfig({
   },
   preview: {
     port: 3001
-  },
-  build: {
-    rollupOptions: {
-      input: {
-        main: resolve(__dirname, 'index.html'),
-        courses: resolve(__dirname, 'src/pages/courses/index.html'),
-      }
-    }
   }
 })
