@@ -1,1 +1,1 @@
-# TdA26-ISSTE_To_Si_Piste
+# TdA26-ISŠTE_To_Si_Pište
