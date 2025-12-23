@@ -1,6 +1,11 @@
 import express from "express";
 import { randomUUID } from "crypto";
 import { pool } from "../db/index.js";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
+import { fileURLToPath } from "url";
+import fetch from "node-fetch";
 
 export const coursesRoutes = express.Router();
 
@@ -32,6 +37,75 @@ function toCourseObject(row: any) {
     createdAt: row.created_at ? new Date(row.created_at).toISOString() : null,
     updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : null,
   };
+}
+
+// Setup uploads directory for materials and favicons
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const uploadsRoot = path.join(__dirname, '..', '..', 'uploads');
+const materialsDir = path.join(uploadsRoot, 'materials');
+const faviconsDir = path.join(uploadsRoot, 'favicons');
+fs.mkdirSync(materialsDir, { recursive: true });
+fs.mkdirSync(faviconsDir, { recursive: true });
+
+// multer storage for material files
+const storage = multer.diskStorage({
+  destination: function (_req, _file, cb) {
+    cb(null, materialsDir);
+  },
+  filename: function (_req, file, cb) {
+    const ext = path.extname(file.originalname) || '';
+    const name = `${randomUUID()}${ext}`;
+    cb(null, name);
+  }
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 30 * 1024 * 1024 }, // 30 MB
+  fileFilter: (_req, file, cb) => {
+    const allowed = [
+      '.pdf', '.docx', '.txt',
+      '.png', '.jpg', '.jpeg', '.gif',
+      '.mp4', '.mp3'
+    ];
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (allowed.includes(ext)) cb(null, true);
+    else cb(new Error('UNSUPPORTED_FILE_TYPE'));
+  }
+});
+
+async function tryFetchFavicon(targetUrl: string) {
+  try {
+    const u = new URL(targetUrl);
+    const candidate = `${u.origin}/favicon.ico`;
+    const res = await fetch(candidate, { redirect: 'follow' });
+    if (!res.ok) return null;
+    const ct = res.headers.get('content-type') || '';
+    if (!ct.startsWith('image/')) return null;
+    const buffer = await res.arrayBuffer();
+    const ext = ct.split('/')[1].split(';')[0] || 'ico';
+    const filename = `${randomUUID()}.${ext.replace(/[^a-z0-9]/gi, '')}`;
+    const outPath = path.join(faviconsDir, filename);
+    fs.writeFileSync(outPath, Buffer.from(buffer));
+    return `/uploads/favicons/${filename}`;
+  } catch (e) {
+    return null;
+  }
+}
+
+function removeStoredFile(fileUrl: string | undefined) {
+  if (!fileUrl) return;
+  try {
+    // expected format: /uploads/materials/<filename>
+    const parts = fileUrl.split('/uploads/');
+    if (parts.length < 2) return;
+    const rel = parts[1];
+    const full = path.join(uploadsRoot, rel);
+    if (fs.existsSync(full)) fs.unlinkSync(full);
+  } catch (e) {
+    // ignore deletion errors
+  }
 }
 
 // List courses
@@ -129,9 +203,11 @@ coursesRoutes.get("/:courseId/materials", async (req, res) => {
   }
 });
 
-coursesRoutes.post("/:courseId/materials", async (req, res) => {
+// Accept multipart/form-data for file uploads (field name: file) or JSON for URLs
+coursesRoutes.post("/:courseId/materials", upload.single('file'), async (req, res) => {
   const { courseId } = req.params;
   const body = req.body || {};
+  // require type and name
   if (!body.type || !body.name) return res.status(400).json({ error: "type and name required" });
   try {
     const row = await getCourseRow(courseId);
@@ -139,16 +215,62 @@ coursesRoutes.post("/:courseId/materials", async (req, res) => {
     const materials = parseJsonField(row.materials);
     const id = randomUUID();
     let material: any;
+
     if (body.type === "url") {
-      material = { uuid: id, type: "url", name: body.name, description: body.description || "", url: body.url || "", faviconUrl: body.faviconUrl || null };
+      // try to fetch favicon (best-effort)
+      let faviconUrl = null;
+      if (body.url) {
+        try {
+          faviconUrl = await tryFetchFavicon(body.url);
+        } catch (e) {
+          faviconUrl = null;
+        }
+      }
+      material = { uuid: id, type: "url", name: body.name, description: body.description || "", url: body.url || "", faviconUrl };
+    } else if (body.type === "file") {
+      // multer processed file (if sent as multipart). If JSON-only was sent with fileUrl, accept it but do not validate storage.
+      if (req.file) {
+        const file = req.file;
+        material = {
+          uuid: id,
+          type: "file",
+          name: body.name,
+          description: body.description || "",
+          fileUrl: `/uploads/materials/${file.filename}`,
+          mimeType: file.mimetype || null,
+          sizeBytes: file.size || 0,
+        };
+      } else if (body.fileUrl) {
+        material = {
+          uuid: id,
+          type: "file",
+          name: body.name,
+          description: body.description || "",
+          fileUrl: body.fileUrl,
+          mimeType: body.mimeType || null,
+          sizeBytes: body.sizeBytes || 0,
+        };
+      } else {
+        return res.status(400).json({ error: 'file is required for type=file' });
+      }
     } else {
-      material = { uuid: id, type: "file", name: body.name, description: body.description || "", fileUrl: body.fileUrl || "", mimeType: body.mimeType || null, sizeBytes: body.sizeBytes || 0 };
+      return res.status(400).json({ error: 'invalid type' });
     }
+
+    // add createdAt so client can sort by newest
+    material.createdAt = new Date().toISOString();
     materials.push(material);
     await pool.execute('UPDATE courses SET materials = ? WHERE uuid = ?', [JSON.stringify(materials), courseId]);
     res.status(201).json(material);
-  } catch (e) {
+  } catch (e: any) {
     console.error(e);
+    // multer file filter emits specific error
+    if (e && e.message === 'UNSUPPORTED_FILE_TYPE') {
+      return res.status(400).json({ error: 'Unsupported file type' });
+    }
+    if (e && e.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({ error: 'File too large (max 30MB)' });
+    }
     res.status(500).json({ error: 'Failed to create material' });
   }
 });
@@ -182,7 +304,11 @@ coursesRoutes.delete("/:courseId/materials/:materialId", async (req, res) => {
     const materials = parseJsonField(row.materials);
     const idx = materials.findIndex((x: any) => x.uuid === materialId);
     if (idx === -1) return res.status(404).json({ message: "Material not found" });
-    materials.splice(idx, 1);
+    const [removed] = materials.splice(idx, 1);
+    // if it was a stored file, attempt to remove it from disk
+    if (removed && removed.type === 'file') {
+      try { removeStoredFile(removed.fileUrl); } catch (e) { /* ignore */ }
+    }
     await pool.execute('UPDATE courses SET materials = ? WHERE uuid = ?', [JSON.stringify(materials), courseId]);
     res.status(204).send();
   } catch (e) {

@@ -190,9 +190,35 @@ async function renderCourses() {
 async function renderCourseDetail(params) {
   const course = await fetchCourse(params.uuid)
   if (!course) { renderNotFound(); return }
+  const materials = (course.materials || []).slice().sort((a,b) => {
+    const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0
+    const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0
+    return tb - ta
+  })
   app.innerHTML = `
     <h1>${escapeHtml(course.name || course.title)}</h1>
     <p>${escapeHtml(course.description || '')}</p>
+    <section style="max-width:760px;margin:1rem auto;text-align:left;">
+      <h2>Materials</h2>
+      <div id="public-materials-list">
+        ${materials.length ? materials.map(m => {
+          if (m.type === 'file') {
+            return `<div style="border:1px solid #e6e9ee;padding:0.5rem;margin-bottom:0.5rem;">
+              <strong>${escapeHtml(m.name)}</strong>
+              <div style="color:#666">${escapeHtml(m.description || '')}</div>
+              <div><a href="${m.fileUrl}" target="_blank" rel="noopener">Download</a></div>
+            </div>`
+          }
+          return `<div style="border:1px solid #e6e9ee;padding:0.5rem;margin-bottom:0.5rem;display:flex;gap:0.5rem;align-items:center;">
+            ${m.faviconUrl ? `<img src="${m.faviconUrl}" style="width:24px;height:24px;object-fit:contain;border-radius:4px" />` : ''}
+            <div>
+              <strong><a href="${m.url}" target="_blank" rel="noopener">${escapeHtml(m.name)}</a></strong>
+              <div style="color:#666">${escapeHtml(m.description || '')}</div>
+            </div>
+          </div>`
+        }).join('') : '<p>No materials yet.</p>'}
+      </div>
+    </section>
     <p><a href="/courses" data-link>Back to list</a></p>
   `
 }
@@ -269,6 +295,7 @@ async function renderManageList() {
       </div>
       <div style="display:flex;gap:0.5rem;">
         <button data-action="edit" data-id="${c.uuid || c.id}">Edit</button>
+        <button data-action="manage" data-id="${c.uuid || c.id}">Manage</button>
         <button data-action="delete" data-id="${c.uuid || c.id}">Delete</button>
       </div>
     </div>
@@ -282,6 +309,8 @@ async function renderManageList() {
       renderDashboard()
     } else if (action === 'edit') {
       openEditForm(id)
+    } else if (action === 'manage') {
+      navigateTo(`/dashboard/courses/${encodeURIComponent(id)}`)
     }
   }))
 }
@@ -309,6 +338,164 @@ function openEditForm(id) {
   }).catch(() => renderNotFound())
 }
 
+// Lecturer: manage single course (materials)
+async function renderManageCourse(params) {
+  if (!isAuth()) { navigateTo('/login'); return }
+  const id = params.uuid
+  const course = await fetchCourse(id)
+  if (!course) return renderNotFound()
+  const materials = (course.materials || []).slice().sort((a,b) => {
+    const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0
+    const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0
+    return tb - ta
+  })
+  app.innerHTML = `
+    <h1>Manage course: ${escapeHtml(course.name || course.title)}</h1>
+    <p><a href="/dashboard" data-link>Back to dashboard</a></p>
+    <section style="max-width:760px;margin:0 auto;text-align:left;">
+      <h2>Materials</h2>
+      <div id="materials-list">${materials.length ? '' : '<p>No materials yet.</p>'}</div>
+      <hr />
+      <h3>Add file</h3>
+      <form id="upload-form">
+        <input name="name" placeholder="Title" required style="width:100%;padding:0.5rem;margin-bottom:0.5rem" />
+        <input name="description" placeholder="Short description" style="width:100%;padding:0.5rem;margin-bottom:0.5rem" />
+        <input type="file" name="file" required style="margin-bottom:0.5rem" />
+        <input type="hidden" name="type" value="file" />
+        <div><button type="submit">Upload file</button></div>
+      </form>
+      <hr />
+      <h3>Add link</h3>
+      <form id="link-form">
+        <input name="name" placeholder="Title" required style="width:100%;padding:0.5rem;margin-bottom:0.5rem" />
+        <input name="url" placeholder="https://..." required style="width:100%;padding:0.5rem;margin-bottom:0.5rem" />
+        <input name="description" placeholder="Short description" style="width:100%;padding:0.5rem;margin-bottom:0.5rem" />
+        <div><button type="submit">Add link</button></div>
+      </form>
+    </section>
+  `
+
+  function renderMaterials() {
+    const container = document.getElementById('materials-list')
+    const arr = (course.materials || []).slice().sort((a,b) => {
+      const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0
+      const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0
+      return tb - ta
+    })
+    if (!arr.length) { container.innerHTML = '<p>No materials yet.</p>'; return }
+    container.innerHTML = arr.map(m => {
+      if (m.type === 'file') {
+        return `<div style="border:1px solid #e6e9ee;padding:0.5rem;margin-bottom:0.5rem;display:flex;justify-content:space-between;align-items:center;">
+          <div style="text-align:left;flex:1">
+            <strong>${escapeHtml(m.name)}</strong>
+            <div style="color:#666">${escapeHtml(m.description || '')}</div>
+            <div><a href="${m.fileUrl}" target="_blank" rel="noopener">Download</a> — ${m.mimeType || ''} ${m.sizeBytes ? '('+m.sizeBytes+' bytes)' : ''}</div>
+          </div>
+          <div style="display:flex;gap:0.5rem">
+            <button data-action="edit-material" data-id="${m.uuid}">Edit</button>
+            <button data-action="delete-material" data-id="${m.uuid}">Delete</button>
+          </div>
+        </div>`
+      }
+      return `<div style="border:1px solid #e6e9ee;padding:0.5rem;margin-bottom:0.5rem;display:flex;justify-content:space-between;align-items:center;">
+        <div style="text-align:left;flex:1;display:flex;gap:0.5rem;align-items:center">
+          ${m.faviconUrl ? `<img src="${m.faviconUrl}" style="width:24px;height:24px;object-fit:contain;border-radius:4px" />` : ''}
+          <div>
+            <strong><a href="${m.url}" target="_blank" rel="noopener">${escapeHtml(m.name)}</a></strong>
+            <div style="color:#666">${escapeHtml(m.description || '')}</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:0.5rem">
+          <button data-action="edit-material" data-id="${m.uuid}">Edit</button>
+          <button data-action="delete-material" data-id="${m.uuid}">Delete</button>
+        </div>
+      </div>`
+    }).join('')
+    // attach listeners
+    container.querySelectorAll('button').forEach(b => b.addEventListener('click', async (e) => {
+      const id = e.currentTarget.dataset.id
+      const action = e.currentTarget.dataset.action
+      if (action === 'delete-material') {
+        if (!confirm('Delete this material?')) return
+        await fetch(`${API_BASE}/courses/${encodeURIComponent(idCourse(id))}/materials/${encodeURIComponent(id)}`, { method: 'DELETE' })
+        // refresh
+        const latest = await fetchCourse(idCourse(id))
+        course.materials = latest.materials || []
+        renderMaterials()
+      } else if (action === 'edit-material') {
+        openEditMaterial(id)
+      }
+    }))
+  }
+
+  function idCourse(materialId) {
+    // helper — materials stored on this course
+    return course.uuid || course.id
+  }
+
+  function openEditMaterial(materialId) {
+    const m = (course.materials || []).find(x => x.uuid === materialId)
+    if (!m) return
+    const formHtml = `
+      <h4>Edit material</h4>
+      <form id="edit-material-form">
+        <input name="name" value="${escapeHtml(m.name)}" required style="width:100%;padding:0.5rem;margin-bottom:0.5rem" />
+        <input name="description" value="${escapeHtml(m.description || '')}" style="width:100%;padding:0.5rem;margin-bottom:0.5rem" />
+        ${m.type === 'url' ? `<input name="url" value="${escapeHtml(m.url || '')}" style="width:100%;padding:0.5rem;margin-bottom:0.5rem" />` : ''}
+        <div><button type="submit">Save</button> <button id="cancel-edit">Cancel</button></div>
+      </form>
+    `
+    const container = document.getElementById('materials-list')
+    container.insertAdjacentHTML('afterbegin', formHtml)
+    document.getElementById('cancel-edit').addEventListener('click', (e) => { e.preventDefault(); renderMaterials() })
+    document.getElementById('edit-material-form').addEventListener('submit', async (e) => {
+      e.preventDefault()
+      const fd = new FormData(e.currentTarget)
+      const payload = { name: fd.get('name'), description: fd.get('description') }
+      if (m.type === 'url') payload.url = fd.get('url')
+      await fetch(`${API_BASE}/courses/${encodeURIComponent(idCourse(materialId))}/materials/${encodeURIComponent(materialId)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      const latest = await fetchCourse(idCourse(materialId))
+      course.materials = latest.materials || []
+      renderMaterials()
+    })
+  }
+
+  // upload handler
+  document.getElementById('upload-form').addEventListener('submit', async (e) => {
+    e.preventDefault()
+    const f = e.currentTarget
+    const fd = new FormData(f)
+    try {
+      const res = await fetch(`${API_BASE}/courses/${encodeURIComponent(id)}/materials`, { method: 'POST', body: fd })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        alert(err.error || 'Upload failed')
+        return
+      }
+      const created = await res.json()
+      course.materials = (course.materials || []).concat([created])
+      renderMaterials()
+      f.reset()
+    } catch (e) { alert('Upload failed') }
+  })
+
+  document.getElementById('link-form').addEventListener('submit', async (e) => {
+    e.preventDefault()
+    const fd = new FormData(e.currentTarget)
+    const payload = { type: 'url', name: fd.get('name'), description: fd.get('description'), url: fd.get('url') }
+    try {
+      const res = await fetch(`${API_BASE}/courses/${encodeURIComponent(id)}/materials`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      if (!res.ok) { const err = await res.json().catch(()=>({})); alert(err.error||'Failed'); return }
+      const created = await res.json()
+      course.materials = (course.materials || []).concat([created])
+      renderMaterials()
+      e.currentTarget.reset()
+    } catch (e) { alert('Failed to add link') }
+  })
+
+  renderMaterials()
+}
+
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))
 }
@@ -318,6 +505,7 @@ route('/courses', renderCourses)
 route('/courses/:uuid', renderCourseDetail)
 route('/login', renderLogin)
 route('/dashboard', renderDashboard)
+route('/dashboard/courses/:uuid', renderManageCourse)
 
 updateNav()
 router()
