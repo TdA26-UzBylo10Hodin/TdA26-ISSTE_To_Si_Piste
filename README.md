@@ -2,7 +2,7 @@
 
 
 ## Tým
-
+- **Ing. Bohuslava Vlčková** – Mentor 
 - **Matěj Dobiáš** – CEO  
 - **Dan Hýský** – Zástupce CEO  
 ## Použité technologie
