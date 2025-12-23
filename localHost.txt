@@ -1,0 +1,4 @@
+npm install
+
+Database (/server): export DATABASE_URL='mysql://root:password@127.0.0.1:3306/tda_app' && npm run dev
+Web (/web):npm run dev
