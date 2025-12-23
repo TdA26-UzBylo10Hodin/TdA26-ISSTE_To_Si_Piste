@@ -14,7 +14,9 @@
 		"zod": "^4.0.2",
 		"express": "^5.1.0",
 		"cors": "^2.8.5",
-		"mysql2": "^3.14.0"
+		"mysql2": "^3.14.0",
+		"multer": "^1.4.5-lts.1",
+		"node-fetch": "^3.3.2"
 	},
 	"devDependencies": {
 		"tsdown": "^0.14.1",
