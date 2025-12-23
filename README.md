@@ -5,7 +5,14 @@
 
 - **Matěj Dobiáš** – CEO  
 - **Dan Hýský** – Zástupce CEO  
+## Použité technologie
 
+- Docker  
+- GitHub  
+- Caddy  
+- Nginx  
+- MySQL
+  
 ## Popis projektu
 
 Tento projekt byl vytvořen v rámci účasti v soutěži Tour De App a studia oboru Informační technologie na střední škole.  
